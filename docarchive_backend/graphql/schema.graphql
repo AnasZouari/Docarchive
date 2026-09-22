@@ -1,0 +1,57 @@
+scalar DateTime
+scalar Upload
+
+type Document {
+    id: ID!
+    title: String!
+    reference: String!
+    type: String!
+    file_path: String!
+    file_name: String!
+    file_size: Int!
+    mime_type: String!
+    status: String!
+    created_at: DateTime!
+    updated_at: DateTime!
+    archives: [Archive!]!
+}
+
+type Archive {
+    id: ID!
+    document_id: ID!
+    document: Document!
+    archive_date: DateTime!
+    storage_location: String!
+    status: String!
+    reason: String
+    created_at: DateTime!
+}
+
+type DocumentStats {
+    total: Int!
+    active: Int!
+    archived: Int!
+    totalSize: String!
+}
+
+type Query {
+    documents: [Document!]! @field(resolver: "App\\GraphQL\\Queries\\Documents@resolve")
+    document(id: ID!): Document @find
+    documentStats: DocumentStats! @field(resolver: "App\\GraphQL\\Queries\\DocumentStats@resolve")
+}
+
+type Mutation {
+    createDocument(
+        title: String!
+        type: String!
+        file: Upload!
+    ): Document! @field(resolver: "App\\GraphQL\\Mutations\\CreateDocument@resolve")
+    
+    archiveDocument(
+        id: ID!
+        reason: String
+    ): Document! @field(resolver: "App\\GraphQL\\Mutations\\ArchiveDocument@resolve")
+    
+    restoreDocument(id: ID!): Document! @field(resolver: "App\\GraphQL\\Mutations\\RestoreDocument@resolve")
+    deleteDocument(id: ID!): Boolean! @field(resolver: "App\\GraphQL\\Mutations\\DeleteDocument@resolve")
+}
