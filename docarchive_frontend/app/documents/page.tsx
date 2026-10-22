@@ -1,135 +1,144 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useMutation } from '@apollo/client';
+import { useMutation, useQuery } from '@apollo/client';
+import toast from 'react-hot-toast';
+
 import { GET_DOCUMENTS } from '@/lib/queries';
-import { ARCHIVE_DOCUMENT, DELETE_DOCUMENT } from '@/lib/mutations';
+import {
+  ARCHIVE_DOCUMENT,
+  DELETE_DOCUMENT,
+} from '@/lib/mutations';
+
 import DocumentList from '@/components/DocumentList';
 import UploadForm from '@/components/UploadForm';
-import toast from 'react-hot-toast';
+import PageState from '@/components/PageState';
 
 export default function DocumentsPage() {
   const [search, setSearch] = useState('');
-  
-  // Fetch documents
-  const { data, loading, error, refetch } = useQuery(GET_DOCUMENTS);
-  
-  // Mutations
+
+  const { data, loading, error, refetch } =
+    useQuery(GET_DOCUMENTS);
+
   const [archiveDocument] = useMutation(ARCHIVE_DOCUMENT);
   const [deleteDocument] = useMutation(DELETE_DOCUMENT);
 
-  // Handle archive
-  const handleArchive = async (id: string) => {
+  async function handleArchive(id: string) {
     try {
-      await archiveDocument({ variables: { id } });
-      toast.success('✅ Document archived successfully!');
-      refetch();
-    } catch (error) {
-      console.error('Archive failed:', error);
-      toast.error('Failed to archive document');
+      await archiveDocument({
+        variables: { id },
+      });
+
+      toast.success('Document archivé.');
+      await refetch();
+    } catch (err) {
+      toast.error(
+        'Archivage impossible : ' + (err as Error).message
+      );
     }
-  };
-
-  // Handle delete
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteDocument({ variables: { id } });
-      toast.success('✅ Document deleted successfully!');
-      refetch();
-    } catch (error) {
-      console.error('Delete failed:', error);
-      toast.error('Failed to delete document');
-    }
-  };
-
-  // Filter documents based on search
-  const documents = data?.documents?.filter((doc: any) =>
-    doc.title.toLowerCase().includes(search.toLowerCase()) ||
-    doc.reference.toLowerCase().includes(search.toLowerCase())
-  ) || [];
-
-  // Loading state
-  if (loading) {
-    return (
-      <div className="container mx-auto p-8 text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Loading documents...</p>
-      </div>
-    );
   }
 
-  // Error state
-  if (error) {
-    console.error('GraphQL Error:', error);
-    return (
-      <div className="container mx-auto p-8 text-center">
-        <div className="text-red-600">
-          <p className="text-lg font-semibold">Error loading documents</p>
-          <p className="text-sm text-gray-500 mt-2">{error.message}</p>
-          <p className="text-sm text-gray-400 mt-1">Make sure backend is running on port 9000</p>
-        </div>
-      </div>
-    );
+  async function handleDelete(id: string) {
+    try {
+      await deleteDocument({
+        variables: { id },
+      });
+
+      toast.success('Document supprimé.');
+      await refetch();
+    } catch (err) {
+      toast.error(
+        'Suppression impossible : ' + (err as Error).message
+      );
+    }
   }
+
+  const allDocuments =
+    data?.documents?.filter(
+      (doc: any) => doc.status === 'active'
+    ) || [];
+
+  const documents = allDocuments.filter((doc: any) => {
+    const searchable = [
+      doc.title,
+      doc.reference,
+      doc.service?.name,
+      doc.category?.name,
+      doc.folder?.name,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return searchable.includes(
+      search.trim().toLowerCase()
+    );
+  });
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+    <main className="mx-auto max-w-7xl px-5 py-10 sm:px-8">
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">📄 Documents</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Manage and organize your documents
+          <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-blue-600">
+            Archivio · Bibliothèque
+          </p>
+
+          <h1 className="text-3xl font-bold text-slate-900">
+            Documents
+          </h1>
+
+          <p className="mt-3 text-sm text-slate-500">
+            Ajoute et organise les documents de ton espace.
           </p>
         </div>
-        <span className="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
-          {documents.length} document{documents.length !== 1 ? 's' : ''}
+
+        <span className="rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700">
+          {allDocuments.length} document(s) actif(s)
         </span>
       </div>
 
-      {/* Search Bar */}
-      <div className="mb-4">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="🔍 Search documents by title or reference..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full p-3 pl-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
-          />
-          <svg
-            className="absolute left-3 top-3.5 h-5 w-5 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+      {loading ? (
+        <PageState loading />
+      ) : error ? (
+        <PageState
+          message={error.message}
+          retry={() => refetch()}
+        />
+      ) : (
+        <>
+          <UploadForm onUpload={() => refetch()} />
+
+          <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div>
+              <h2 className="text-lg font-semibold">
+                Bibliothèque documentaire
+              </h2>
+
+              <p className="mt-1 text-xs text-slate-500">
+                {documents.length} sur {allDocuments.length}
+              </p>
+            </div>
+
+            <input
+              aria-label="Rechercher un document"
+              type="search"
+              placeholder="Titre, référence, service, catégorie ou dossier…"
+              value={search}
+              onChange={event =>
+                setSearch(event.target.value)
+              }
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 sm:max-w-md"
             />
-          </svg>
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* Upload Form */}
-      <UploadForm onUpload={refetch} />
-
-      {/* Document List */}
-      <DocumentList
-        documents={documents}
-        onArchive={handleArchive}
-        onDelete={handleDelete}
-      />
-    </div>
+          <DocumentList
+            documents={documents}
+            onArchive={handleArchive}
+            onDelete={handleDelete}
+            searching={Boolean(search.trim())}
+          />
+        </>
+      )}
+    </main>
   );
 }

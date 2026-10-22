@@ -1,77 +1,220 @@
 'use client';
 
-export default function ArchiveList({ documents, onRestore }) {
-  if (!documents || documents.length === 0) {
+import { useRef, useState } from 'react';
+import toast from 'react-hot-toast';
+
+import { useAuth } from './AuthProvider';
+import JsonTablePreview from './JsonTablePreview';
+import { hasAdminRole } from '@/lib/auth';
+import { downloadDocument } from '@/lib/document-files';
+
+function formatDate(value) {
+  if (!value) return '—';
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? '—'
+    : date.toLocaleDateString('fr-FR');
+}
+
+function latestArchive(document) {
+  return [...(document.archives ?? [])].sort(
+    (a, b) => Number(b.id) - Number(a.id)
+  )[0];
+}
+
+export default function ArchiveList({
+  documents = [],
+  onRestore,
+  searching = false,
+}) {
+  const { user } = useAuth();
+  const isAdmin = hasAdminRole(user);
+
+  const [selected, setSelected] = useState(null);
+  const [downloading, setDownloading] = useState(null);
+  const [restoring, setRestoring] = useState(null);
+
+  const trigger = useRef(null);
+
+  const previewDocument = documents?.find(
+    document => document.id === selected
+  );
+
+  function closePreview() {
+    setSelected(null);
+    trigger.current?.focus();
+  }
+
+  async function download(document) {
+    setDownloading(document.id);
+
+    try {
+      await downloadDocument(document);
+    } catch (error) {
+      toast.error(error.message || 'Téléchargement impossible.');
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  async function restore(document) {
+    if (!window.confirm('Restaurer ce document dans les documents actifs ?')) {
+      return;
+    }
+
+    setRestoring(document.id);
+
+    try {
+      await onRestore(document.id);
+
+      if (selected === document.id) {
+        setSelected(null);
+      }
+    } catch (error) {
+      toast.error(error.message || 'Restauration impossible.');
+    } finally {
+      setRestoring(null);
+    }
+  }
+
+  if (!documents?.length) {
     return (
-      <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-        <p className="text-gray-500 text-lg">📦 No archived documents</p>
-        <p className="text-gray-400">Archive documents to see them here</p>
+      <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center">
+        <p className="text-lg font-medium text-slate-600">
+          {searching
+            ? 'Aucune archive correspondante'
+            : 'Aucun document archivé'}
+        </p>
+        <p className="mt-2 text-sm text-slate-400">
+          {searching
+            ? 'Essayez un autre titre ou une autre référence.'
+            : 'Les documents archivés apparaîtront ici.'}
+        </p>
       </div>
     );
   }
 
-  const formatDate = (date) => {
-    if (!date) return 'N/A';
-    return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const handleRestore = (id) => {
-    if (confirm('Restore this document from archive?')) {
-      onRestore(id);
-    }
-  };
-
   return (
-    <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
-      <table className="w-full">
-        <thead>
-          <tr className="bg-gray-50 border-b">
-            <th className="p-3 text-left text-sm font-semibold text-gray-600">Title</th>
-            <th className="p-3 text-left text-sm font-semibold text-gray-600">Reference</th>
-            <th className="p-3 text-left text-sm font-semibold text-gray-600">Type</th>
-            <th className="p-3 text-left text-sm font-semibold text-gray-600">Archived Date</th>
-            <th className="p-3 text-left text-sm font-semibold text-gray-600">Reason</th>
-            <th className="p-3 text-left text-sm font-semibold text-gray-600">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {documents.map((doc) => (
-            <tr key={doc.id} className="border-b hover:bg-gray-50 transition-colors">
-              <td className="p-3 font-medium">{doc.title || 'Untitled'}</td>
-              <td className="p-3 text-sm text-gray-600">{doc.reference || 'N/A'}</td>
-              <td className="p-3">
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
-                  {doc.type || 'Unknown'}
-                </span>
-              </td>
-              <td className="p-3 text-sm text-gray-600">
-                {doc.archives && doc.archives.length > 0 && doc.archives[0].archive_date
-                  ? formatDate(doc.archives[0].archive_date)
-                  : 'N/A'}
-              </td>
-              <td className="p-3 text-sm text-gray-600">
-                {doc.archives && doc.archives.length > 0 && doc.archives[0].reason
-                  ? doc.archives[0].reason
-                  : 'No reason provided'}
-              </td>
-              <td className="p-3">
-                <button
-                  onClick={() => handleRestore(doc.id)}
-                  className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm transition-colors"
-                >
-                  Restore
-                </button>
-              </td>
+    <>
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <table className="w-full text-left text-sm">
+          <caption className="border-b p-5 text-left font-semibold">
+            {documents.length} archive(s)
+          </caption>
+
+          <thead className="bg-slate-50 text-slate-600">
+            <tr>
+              <th className="p-4">Document</th>
+              <th className="p-4">Service</th>
+              <th className="p-4">Format</th>
+              <th className="p-4">Archivé le</th>
+              <th className="p-4">Motif</th>
+              <th className="p-4">Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+
+          <tbody>
+            {documents.map(document => {
+              const archive = latestArchive(document);
+
+              const isJson = /\.json$/i.test(
+                document.file_name || document.file_path || ''
+              );
+
+              return (
+                <tr
+                  key={document.id}
+                  className="border-t align-top hover:bg-slate-50"
+                >
+                  <td className="p-4">
+                    <p className="font-semibold">
+                      {document.title || 'Sans titre'}
+                    </p>
+                    <p className="mt-1 text-xs text-blue-700">
+                      {document.reference}
+                    </p>
+                    {document.folder && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Dossier : {document.folder.name}
+                      </p>
+                    )}
+                  </td>
+
+                  <td className="p-4 text-slate-500">
+                    {document.service?.name || 'Sans service'}
+                  </td>
+
+                  <td className="p-4">
+                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700">
+                      {document.type}
+                    </span>
+                  </td>
+
+                  <td className="whitespace-nowrap p-4 text-slate-500">
+                    {formatDate(archive?.archive_date)}
+                  </td>
+
+                  <td className="max-w-xs whitespace-pre-wrap break-words p-4 text-slate-500">
+                    {archive?.reason || 'Non renseigné'}
+                  </td>
+
+                  <td className="p-4">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={downloading !== null}
+                        onClick={() => download(document)}
+                        className="rounded-lg bg-slate-100 px-3 py-2 text-xs disabled:opacity-50"
+                      >
+                        {downloading === document.id
+                          ? 'Téléchargement…'
+                          : 'Télécharger'}
+                      </button>
+
+                      {isJson && (
+                        <button
+                          type="button"
+                          aria-expanded={selected === document.id}
+                          onClick={event => {
+                            trigger.current = event.currentTarget;
+                            setSelected(document.id);
+                          }}
+                          className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700"
+                        >
+                          Voir en tableau
+                        </button>
+                      )}
+
+                      {isAdmin && onRestore && (
+                        <button
+                          type="button"
+                          disabled={restoring !== null}
+                          onClick={() => restore(document)}
+                          className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 disabled:opacity-50"
+                        >
+                          {restoring === document.id
+                            ? 'Restauration…'
+                            : 'Restaurer'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {previewDocument && (
+        <JsonTablePreview
+          key={previewDocument.id}
+          document={previewDocument}
+          onClose={closePreview}
+        />
+      )}
+    </>
   );
 }

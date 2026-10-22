@@ -1,129 +1,367 @@
 'use client';
 
-import { useState } from 'react';
-import { useMutation } from '@apollo/client';
-import { CREATE_DOCUMENT } from '@/lib/mutations';
+import { useRef, useState, type FormEvent } from 'react';
+import Link from 'next/link';
+import { useMutation, useQuery } from '@apollo/client';
 import toast from 'react-hot-toast';
 
-interface UploadFormProps {
-  onUpload: () => void;
-}
+import { useAuth } from './AuthProvider';
+import { hasAdminRole } from '@/lib/auth';
+import { CREATE_DOCUMENT } from '@/lib/mutations';
+import { GET_CLASSIFICATION } from '@/lib/queries';
 
-export default function UploadForm({ onUpload }: UploadFormProps) {
+type Item = {
+  id: string;
+  name: string;
+};
+
+type Folder = Item & {
+  service: Item;
+};
+
+const emptyMetadata = {
+  service_id: '',
+  category_id: '',
+  folder_id: '',
+  description: '',
+  document_date: '',
+  product: '',
+};
+
+const field =
+  'mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 disabled:bg-slate-100';
+
+export default function UploadForm({
+  onUpload,
+}: {
+  onUpload: () => void;
+}) {
+  const { user } = useAuth();
+
   const [title, setTitle] = useState('');
   const [type, setType] = useState('PDF');
   const [file, setFile] = useState<File | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [createDocument, { loading }] = useMutation(CREATE_DOCUMENT);
+  const [metadata, setMetadata] = useState(emptyMetadata);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!file || !title) {
-      toast.error('Please fill in all fields');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const {
+    data,
+    loading: classificationLoading,
+    error: classificationError,
+    refetch,
+  } = useQuery(GET_CLASSIFICATION);
+
+  const [createDocument, { loading }] =
+    useMutation(CREATE_DOCUMENT);
+
+  const isAdmin = hasAdminRole(user);
+
+  const canUpload =
+    isAdmin ||
+    (user?.role === 'agent' && user.service_id != null);
+
+  const selectedService =
+    user?.role === 'agent'
+      ? String(user.service_id ?? '')
+      : metadata.service_id;
+
+  const services: Item[] = data?.services ?? [];
+  const categories: Item[] = data?.categories ?? [];
+  const folders: Folder[] = data?.folders ?? [];
+
+  const availableFolders = folders.filter(
+    folder => String(folder.service.id) === selectedService
+  );
+
+  const disabled =
+    !canUpload ||
+    loading ||
+    classificationLoading ||
+    Boolean(classificationError);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!canUpload) {
+      toast.error('Demandez une affectation à votre administrateur.');
       return;
     }
 
-    // Validate file size (max 10MB)
+    if (!title.trim() || !file) {
+      toast.error('Saisissez un titre et choisissez un fichier.');
+      return;
+    }
+
+    if (!selectedService) {
+      toast.error('Choisissez un service.');
+      return;
+    }
+
     if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size must be less than 10MB');
+      toast.error('Le fichier ne doit pas dépasser 10 Mo.');
       return;
     }
 
     try {
-      setUploadProgress(20);
-      
       await createDocument({
-        variables: { title, type, file },
+        variables: {
+          title: title.trim(),
+          type,
+          file,
+          service_id: selectedService,
+          category_id: metadata.category_id || null,
+          folder_id: metadata.folder_id || null,
+          description: metadata.description.trim() || null,
+          document_date: metadata.document_date || null,
+          product: metadata.product || null,
+        },
       });
-      
-      setUploadProgress(100);
-      toast.success('✅ Document uploaded successfully!');
-      
+
       setTitle('');
       setFile(null);
+      setMetadata(emptyMetadata);
+
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
+
+      toast.success('Document ajouté.');
       onUpload();
-      
-      const fileInput = document.getElementById('file-input') as HTMLInputElement;
-      if (fileInput) fileInput.value = '';
-      
-      setTimeout(() => setUploadProgress(0), 2000);
-      
     } catch (error) {
-      console.error('Upload failed:', error);
-      toast.error('Failed to upload document: ' + (error as Error).message);
-      setUploadProgress(0);
+      toast.error((error as Error).message);
     }
-  };
+  }
 
   return (
-    <form onSubmit={handleSubmit} className="mb-8 p-6 border rounded-lg bg-white shadow-sm">
-      <h2 className="text-lg font-semibold mb-4">📤 Upload New Document</h2>
-      
-      {/* Progress Bar */}
-      {uploadProgress > 0 && uploadProgress < 100 && (
-        <div className="mb-4">
-          <div className="w-full bg-gray-200 rounded-full h-2.5">
-            <div 
-              className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
-              style={{ width: `${uploadProgress}%` }}
-            ></div>
-          </div>
-          <p className="text-xs text-gray-500 mt-1">Uploading... {uploadProgress}%</p>
-        </div>
-      )}
-      
-      {uploadProgress === 100 && (
-        <div className="mb-4 p-2 bg-green-100 text-green-800 rounded">
-          ✅ Upload complete!
-        </div>
-      )}
-      
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <input
-          type="text"
-          placeholder="Document title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-          required
-        />
-        <select
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-          className="p-2 border rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-        >
-          <option>PDF</option>
-          <option>DOC</option>
-          <option>DOCX</option>
-          <option>XLS</option>
-          <option>XLSX</option>
-          <option>PPT</option>
-          <option>PPTX</option>
-          <option>Image</option>
-          <option>Other</option>
-        </select>
-        <div>
-          <input
-            id="file-input"
-            type="file"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="p-2 border rounded focus:ring-2 focus:ring-blue-500 w-full"
-            required
-          />
-          {file && (
-            <p className="text-xs text-gray-500 mt-1">
-              📎 {file.name} ({(file.size / 1024).toFixed(2)} KB)
-            </p>
-          )}
-        </div>
+    <form
+      id="upload"
+      onSubmit={submit}
+      aria-busy={loading}
+      className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+    >
+      <div className="border-b border-slate-100 p-6">
+        <h2 className="text-lg font-semibold">
+          Ajouter un document
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Choisissez un fichier et renseignez son classement.
+        </p>
       </div>
-      <button
-        type="submit"
-        disabled={loading}
-        className="mt-4 px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+
+      {!canUpload && (
+        <p role="alert" className="px-6 pt-4 text-amber-700">
+          Contactez votre administrateur pour être affecté à un service.
+        </p>
+      )}
+
+      {classificationError && (
+        <div role="alert" className="px-6 pt-4 text-red-700">
+          Impossible de charger le classement.
+          <button
+            type="button"
+            onClick={() => {
+              void refetch().catch(error =>
+                toast.error(error.message)
+              );
+            }}
+            className="ml-3 underline"
+          >
+            Réessayer
+          </button>
+        </div>
+      )}
+
+      <fieldset
+        disabled={disabled}
+        className="grid gap-5 p-6 md:grid-cols-2"
       >
-        {loading ? '⏳ Uploading...' : '📤 Upload Document'}
-      </button>
+        <label className="text-sm font-medium">
+          Titre du document
+          <input
+            value={title}
+            onChange={event => setTitle(event.target.value)}
+            required
+            maxLength={255}
+            className={field}
+          />
+        </label>
+
+        <label className="text-sm font-medium">
+          Type
+          <select
+            value={type}
+            onChange={event => setType(event.target.value)}
+            className={field}
+          >
+            {[
+              'PDF', 'DOC', 'DOCX', 'XLS', 'XLSX',
+              'PPT', 'PPTX', 'JSON', 'Image', 'Other',
+            ].map(value => (
+              <option key={value} value={value}>
+                {value === 'Other' ? 'Autre' : value}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-sm font-medium">
+          Service
+          <select
+            value={selectedService}
+            disabled={!isAdmin}
+            required
+            onChange={event =>
+              setMetadata(previous => ({
+                ...previous,
+                service_id: event.target.value,
+                folder_id: '',
+              }))
+            }
+            className={field}
+          >
+            <option value="">Choisir un service</option>
+            {services.map(service => (
+              <option key={service.id} value={service.id}>
+                {service.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-sm font-medium">
+          Catégorie
+          <select
+            value={metadata.category_id}
+            onChange={event =>
+              setMetadata(previous => ({
+                ...previous,
+                category_id: event.target.value,
+              }))
+            }
+            className={field}
+          >
+            <option value="">Sans catégorie</option>
+            {categories.map(category => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-sm font-medium">
+          Dossier
+          <select
+            value={metadata.folder_id}
+            disabled={!selectedService}
+            onChange={event =>
+              setMetadata(previous => ({
+                ...previous,
+                folder_id: event.target.value,
+              }))
+            }
+            className={field}
+          >
+            <option value="">Sans dossier</option>
+            {availableFolders.map(folder => (
+              <option key={folder.id} value={folder.id}>
+                {folder.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-sm font-medium">
+          Date du document
+          <input
+            type="date"
+            value={metadata.document_date}
+            onChange={event =>
+              setMetadata(previous => ({
+                ...previous,
+                document_date: event.target.value,
+              }))
+            }
+            className={field}
+          />
+        </label>
+
+        <label className="text-sm font-medium">
+          Produit concerné
+          <select
+            value={metadata.product}
+            onChange={event =>
+              setMetadata(previous => ({
+                ...previous,
+                product: event.target.value,
+              }))
+            }
+            className={field}
+          >
+            <option value="">Non concerné</option>
+            {['Riz', 'Sucre', 'Café', 'Thé', 'Autre'].map(value => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-sm font-medium">
+          Fichier — maximum 10 Mo
+          <input
+            ref={inputRef}
+            type="file"
+            required
+            onChange={event =>
+              setFile(event.target.files?.[0] ?? null)
+            }
+            className={field}
+          />
+        </label>
+
+        <label className="text-sm font-medium md:col-span-2">
+          Description
+          <textarea
+            rows={3}
+            maxLength={5000}
+            value={metadata.description}
+            onChange={event =>
+              setMetadata(previous => ({
+                ...previous,
+                description: event.target.value,
+              }))
+            }
+            className={field}
+          />
+        </label>
+
+        {isAdmin && (
+          <Link
+            href="/dossiers"
+            className="text-sm text-blue-700 underline md:col-span-2"
+          >
+            Gérer les dossiers et le classement
+          </Link>
+        )}
+      </fieldset>
+
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-slate-50 p-6">
+        <p role="status" className="text-xs text-slate-500">
+          {loading
+            ? 'Envoi en cours…'
+            : 'Le fichier sera enregistré dans le stockage privé.'}
+        </p>
+
+        <button
+          type="submit"
+          disabled={disabled || !selectedService}
+          className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {loading ? 'Envoi…' : 'Ajouter le document'}
+        </button>
+      </div>
     </form>
   );
 }

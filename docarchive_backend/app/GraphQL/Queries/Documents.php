@@ -8,6 +8,13 @@ class Documents
 {
     public function resolve($root, array $args)
     {
-        return Document::with('archives')->latest()->get();
+        return Document::with([
+            'archives',
+            'service',
+            'category',
+            'folder',
+        ])
+            ->latest()
+            ->get();
     }
 }

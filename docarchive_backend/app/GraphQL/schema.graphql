@@ -1,0 +1,137 @@
+scalar DateTime
+    @scalar(class: "Nuwave\\Lighthouse\\Schema\\Types\\Scalars\\DateTime")
+
+scalar Upload
+    @scalar(class: "Nuwave\\Lighthouse\\Schema\\Types\\Scalars\\Upload")
+
+type Service {
+    id: ID!
+    name: String!
+}
+
+type Category {
+    id: ID!
+    name: String!
+}
+
+type Folder {
+    id: ID!
+    name: String!
+    service: Service! @belongsTo
+    documents: [Document!]! @hasMany
+}
+
+type Document {
+    id: ID!
+    title: String!
+    reference: String!
+    type: String!
+
+    file_path: String!
+    file_name: String!
+    file_size: Int!
+    mime_type: String!
+
+    status: String!
+    description: String
+    document_date: String
+    product: String
+
+    service: Service @belongsTo
+    category: Category @belongsTo
+    folder: Folder @belongsTo
+
+    created_at: DateTime!
+    updated_at: DateTime!
+
+    archives: [Archive!]!
+}
+
+type Archive {
+    id: ID!
+    document_id: ID!
+    document: Document!
+    archive_date: DateTime!
+    storage_location: String!
+    status: String!
+    reason: String
+    created_at: DateTime!
+}
+
+type DocumentStats {
+    total: Int!
+    active: Int!
+    archived: Int!
+    totalSize: String!
+}
+
+type Query {
+    services: [Service!]!
+    @guard(with: ["sanctum"])
+    @field(resolver: "App\\GraphQL\\Queries\\Services@resolve")
+    categories: [Category!]!
+        @guard(with: ["sanctum"])
+        @all
+
+    folders: [Folder!]!
+        @guard(with: ["sanctum"])
+        @all
+
+    documents: [Document!]!
+        @guard(with: ["sanctum"])
+        @field(resolver: "App\\GraphQL\\Queries\\Documents@resolve")
+
+    document(id: ID!): Document
+        @guard(with: ["sanctum"])
+        @find
+
+    documentStats: DocumentStats!
+        @guard(with: ["sanctum"])
+        @field(resolver: "App\\GraphQL\\Queries\\DocumentStats@resolve")
+}
+
+type Mutation {
+    createService(name: String!, center_id: ID): Service!
+    @guard(with: ["sanctum"])
+    @field(resolver: "App\\GraphQL\\Mutations\\CreateClassification@service")
+    
+    createCategory(name: String!): Category!
+        @guard(with: ["sanctum"])
+        @field(resolver: "App\\GraphQL\\Mutations\\CreateClassification@category")
+
+    createFolder(
+        name: String!
+        service_id: ID!
+    ): Folder!
+        @guard(with: ["sanctum"])
+        @field(resolver: "App\\GraphQL\\Mutations\\CreateClassification@folder")
+
+    createDocument(
+        title: String!
+        type: String!
+        file: Upload!
+        service_id: ID
+        category_id: ID
+        folder_id: ID
+        description: String
+        document_date: String
+        product: String
+    ): Document!
+        @guard(with: ["sanctum"])
+        @field(resolver: "App\\GraphQL\\Mutations\\CreateDocument@resolve")
+
+    archiveDocument(
+        id: ID!
+        reason: String
+    ): Document!
+        @guard(with: ["sanctum"])
+        @field(resolver: "App\\GraphQL\\Mutations\\ArchiveDocument@resolve")
+
+    restoreDocument(id: ID!): Document!
+        @guard(with: ["sanctum"])
+        @field(resolver: "App\\GraphQL\\Mutations\\RestoreDocument@resolve")
+
+    deleteDocument(id: ID!): Boolean!
+        @guard(with: ["sanctum"])
+        @field(resolver: "App\\GraphQL\\Mutations\\DeleteDocument@resolve")
+}
